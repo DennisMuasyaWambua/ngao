@@ -1,0 +1,51 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: core-payment-engine
+
+  # --- PostgreSQL ledger (see docker-compose.yml: service "postgres") ---------
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ngao_ledger
+    username: ngao
+    password: ngao_secret
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update          # auto-create/evolve the schema for local dev
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  # --- Redis idempotency store (see docker-compose.yml: service "redis") ------
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  # --- Kafka producer (see docker-compose.yml: service "kafka") ---------------
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                 # wait for the broker to durably ack the event
+      properties:
+        spring.json.add.type.headers: true
+
+# --- Application-specific configuration --------------------------------------
+app:
+  idempotency:
+    ttl-seconds: 86400          # 24h window for duplicate-request detection
+
+logging:
+  level:
+    com.ngao: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN

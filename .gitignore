@@ -1,0 +1,90 @@
+###############################################################################
+# Project Ngao — .gitignore
+# Covers: Java, Kotlin, Maven, Gradle, Android, and macOS / Windows OS cruft.
+###############################################################################
+
+# ----------------------------------------------------------------------------
+# Java
+# ----------------------------------------------------------------------------
+*.class
+*.log
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# ----------------------------------------------------------------------------
+# Maven  (the build output; the ./mvnw wrapper itself stays tracked)
+# ----------------------------------------------------------------------------
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/.develocity/
+
+# ----------------------------------------------------------------------------
+# Gradle / Android
+# ----------------------------------------------------------------------------
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+bin/
+gen/
+out/
+release/
+captures/
+.externalNativeBuild/
+.cxx/
+*.keystore
+!debug.keystore
+# Keep the Gradle wrapper tracked if/when it is generated:
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# ----------------------------------------------------------------------------
+# Kotlin
+# ----------------------------------------------------------------------------
+.kotlin/
+
+# ----------------------------------------------------------------------------
+# IDEs / editors
+# ----------------------------------------------------------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.project
+.classpath
+.settings/
+*.swp
+*~
+
+# ----------------------------------------------------------------------------
+# macOS
+# ----------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ----------------------------------------------------------------------------
+# Windows
+# ----------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk

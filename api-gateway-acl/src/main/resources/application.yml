@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway-acl
+
+  # --- Kafka consumer for the legacy translator (see docker-compose: kafka) ----
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: legacy-translator
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # The producer (core-payment-engine) and this consumer live in different
+        # packages, so ignore the inbound __TypeId__ header and always bind the
+        # payload to the gateway's own event type. This is the ACL boundary.
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.ngao.gateway.event.PaymentSuccessEvent
+        spring.json.trusted.packages: "com.ngao.*"
+
+# --- Downstream service: the Core Payment Engine (Project 1) ------------------
+core-payment-engine:
+  base-url: http://localhost:8081
+
+# --- Application-specific configuration --------------------------------------
+app:
+  kafka:
+    topic:
+      core-transactions: core-transactions
+
+logging:
+  level:
+    com.ngao: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN

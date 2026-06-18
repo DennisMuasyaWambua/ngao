@@ -1,0 +1,167 @@
+# ==============================================================================
+# Project Ngao - Local Infrastructure Stack
+# ==============================================================================
+# Spins up every backing service the Ngao platform depends on:
+#
+#   postgres   : Source-of-truth transactional ledger  (Core Payment Engine)
+#   redis      : Idempotency-key store (fast TTL-based request de-duplication)
+#   zookeeper  : Coordination service required by Apache Kafka
+#   kafka      : Event-streaming backbone (topic: core-transactions)
+#   kafka-ui   : OPTIONAL web console for inspecting topics/events (dev only)
+#
+# Usage:
+#   docker compose up -d          # start the whole stack in the background
+#   docker compose ps             # check container + health status
+#   docker compose logs -f kafka  # follow a single service's logs
+#   docker compose down           # stop & remove containers (keeps volumes)
+#   docker compose down -v        # ALSO wipe persisted volumes (clean slate)
+# ==============================================================================
+
+name: ngao
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL - Transactional Ledger (system of record for the Payment Engine)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: ngao-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ngao
+      POSTGRES_PASSWORD: ngao_secret
+      POSTGRES_DB: ngao_ledger
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngao -d ngao_ledger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ngao-net
+
+  # ---------------------------------------------------------------------------
+  # Redis - Idempotency-Key Store (X-Idempotency-Key de-duplication, TTL based)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ngao-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ngao-net
+
+  # ---------------------------------------------------------------------------
+  # Zookeeper - Kafka cluster coordination
+  # ---------------------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: ngao-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "ruok,srvr,stat"
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -w 2 localhost 2181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ngao-net
+
+  # ---------------------------------------------------------------------------
+  # Kafka - Event-streaming backbone
+  # ---------------------------------------------------------------------------
+  # Two listeners are configured so the broker is reachable from BOTH worlds:
+  #   INTERNAL (kafka:29092)     -> other containers on the ngao-net network
+  #   EXTERNAL (localhost:9092)  -> Spring Boot apps you run on the host machine
+  # This dual-listener setup is the canonical fix for "works in Docker but not
+  # from my IDE" Kafka connectivity problems.
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: ngao-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Single-broker dev cluster -> every replication factor must be 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ngao-net
+
+  # ---------------------------------------------------------------------------
+  # Kafka UI - OPTIONAL browser console at http://localhost:8085 (dev only)
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ngao-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ngao-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - ngao-net
+
+# ------------------------------------------------------------------------------
+# Named volumes -> data survives `docker compose down` (use `down -v` to purge)
+# ------------------------------------------------------------------------------
+volumes:
+  postgres-data:
+  redis-data:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+
+# ------------------------------------------------------------------------------
+# Dedicated bridge network so services resolve each other by container name
+# ------------------------------------------------------------------------------
+networks:
+  ngao-net:
+    driver: bridge
