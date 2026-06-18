@@ -1,0 +1,81 @@
+name: "CI/CD - Build & Publish Docker Images"
+
+# Builds a Docker image for each backend service and publishes it to Docker Hub
+# (https://hub.docker.com/u/muasya1).
+#
+#   - push to main          -> build + push tags :latest and :sha-<short>
+#   - tag v1.2.3            -> build + push semver tags :1.2.3 and :1.2
+#   - pull request to main  -> build ONLY (no push), to validate the image build
+#
+# Requires one repository secret: DOCKERHUB_TOKEN (a Docker Hub access token).
+# Until that secret is added, the workflow still builds the images but skips the
+# login/push steps, so the run stays green.
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*.*.*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_USERNAME: muasya1
+
+jobs:
+  build-and-push:
+    name: "build (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Surfaced from the secret so steps can detect whether publishing is configured.
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: core-payment-engine
+            image: ngao-core-payment-engine
+          - service: api-gateway-acl
+            image: ngao-api-gateway-acl
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event_name != 'pull_request' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract image metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && env.DOCKERHUB_TOKEN != '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: false

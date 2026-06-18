@@ -259,6 +259,43 @@ like a legacy core-banking `PostTransaction` request before "pushing" it.
 
 ---
 
+## Continuous Delivery (CI/CD)
+
+GitHub Actions (`.github/workflows/docker-publish.yml`) builds a Docker image for
+each backend service and publishes it to Docker Hub under **`muasya1`**:
+
+| Service               | Image                              |
+| --------------------- | ---------------------------------- |
+| `core-payment-engine` | `muasya1/ngao-core-payment-engine` |
+| `api-gateway-acl`     | `muasya1/ngao-api-gateway-acl`     |
+
+**Triggers**
+
+- **push to `main`** → build + push `:latest` and `:sha-<short>`
+- **tag `vX.Y.Z`** → build + push `:X.Y.Z` and `:X.Y`
+- **pull request to `main`** → build only (validates the image, no push)
+
+**One-time setup** — add a single repository secret so the workflow can publish:
+
+1. Create a Docker Hub **access token**:
+   <https://app.docker.com/settings/personal-access-tokens> → *Generate* (Read & Write).
+2. In GitHub: *Settings → Secrets and variables → Actions → New repository secret*
+   - **Name:** `DOCKERHUB_TOKEN`
+   - **Value:** the access token from step 1
+
+Until that secret exists the pipeline still builds the images (staying green) but
+skips the push. Each service also has a standalone multi-stage `Dockerfile`:
+
+```bash
+docker build -t muasya1/ngao-core-payment-engine:dev ./core-payment-engine
+```
+
+> Runtime config (DB/Redis/Kafka hosts) is overridable via standard Spring
+> environment variables — e.g. `SPRING_DATASOURCE_URL`, `SPRING_DATA_REDIS_HOST`,
+> `SPRING_KAFKA_BOOTSTRAP_SERVERS` — so the same image runs in any environment.
+
+---
+
 ## Build Phases
 
 This monorepo was scaffolded in five deliberate phases:

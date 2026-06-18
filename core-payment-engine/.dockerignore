@@ -1,0 +1,9 @@
+# Keep the Docker build context small & deterministic.
+target/
+.mvn/
+mvnw
+mvnw.cmd
+*.iml
+.idea/
+.git/
+.gitignore
